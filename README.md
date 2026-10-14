@@ -1,145 +1,159 @@
-<h2>ENTRY QUEUE MANAGEMENT SYSTEM</h2> 
-<h4>PROJECT ID: P3</h4> 
+<![CDATA[# SmartGate — Stadium Entry Queue Simulator
 
-<h4>TEAM MEMBERS : </h4>
-1. Jiya Patel - 202301034<br /> 
-2. Hiya Modi - 202301011<br /> 
-3. Yashasvi Jadav - 202301069<br /> 
-4. Kavya Parmar - 202301085<br /> 
-
-<h4>TEAM ID: SeeksForGeeks </h4>
-
-### 🧠 Efficiency & Data Structure Rationale
-
-This system is designed for high efficiency and responsiveness in managing large crowds across multiple entry gates. To achieve this, we carefully selected data structures that balance performance, flexibility, and real-time adaptability.
+> A high-performance C++17 discrete-event simulator and live console for managing spectators entering a stadium through multiple gates, with VIP fast-lane, gate switching, and a head-to-head comparison of gate-assignment strategies.
 
 ---
 
-#### ✅ Key Data Structures Used
+## ✨ Features
 
-- **Array of Deques (deque<int> Queue[N])**  
-  Each entry gate is represented by a separate deque.
-
-  **Why deque?**
-  - Supports O(1) insertion and deletion at both ends — ideal for fast reshuffling and dequeuing.
-  - Provides random access, enabling spectators to switch gates efficiently.
-  - Dynamically adjusts to queue size without reallocations, unlike arrays or vectors.
-
-- **Array of Pairs (pair<short int, int> SerialStat[M])**  
-  Stores status and gate assignment for each of the M spectators.
-
-  - first (short int): status of the spectator  
-    - 0 – not yet in a queue  
-    - 1 – currently in a queue  
-    - 2 – already entered the stadium  
-  - second (int): current assigned gate number
-
-  **Why this structure?**
-  - Allows O(1) access and updates for each person using their serial number as an index.
-  - Reduces lookup time from O(MN) to O(M) by avoiding scanning queues.
-
-- **Counter Class**  
-  Tracks how many people have been processed and how many are VIPs. Helps determine loop termination and progress logic.
-
-- **Stopwatch Class**  
-  Uses high_resolution_clock to track total simulation time, mimicking real-world gate operation timings.
+- **Three operating modes** — automated strategy comparison, single detailed simulation, and a real-time interactive console.
+- **Gate-assignment strategies** — *Least-Loaded*, *Round-Robin*, and *Random*; compare them side-by-side across hundreds of seeded runs.
+- **VIP fast-lane** — every *k*-th ticket holder bypasses all queues and enters immediately through a dedicated gate.
+- **Gate switching** — spectators already in a queue can move to a different gate at any time; the system preserves their original arrival time for fair wait statistics.
+- **Virtual clock** — the deterministic core never sleeps or prints, so a 10-minute scenario completes in microseconds and the entire domain layer is trivially testable.
+- **Thread-safe interactive mode** — a background ticker thread advances simulated time while the main thread reads user commands, all synchronized via a single mutex and condition variable.
+- **Seedable, reproducible randomness** — uses `std::mt19937` + `std::uniform_int_distribution` for unbiased, repeatable results.
+- **13 automated tests** — dependency-free runner, including a concurrent stress test designed for ThreadSanitizer.
 
 ---
 
-#### ⏱️ Time & Space Complexity
+## 📋 Prerequisites
 
-- **Time Complexity:**
-  - Initialization, assignment, and gate switching: O(M)
-  - VIP check (via hash function): O(1)
-  - Queue balancing and reshuffling: O(M) in worst case
-  - Auto-dequeue (background thread): O(M) over time
-
-- **Space Complexity:**
-  - O(M + N)  
-    - M spectators stored in SerialStat  
-    - N dynamic deques for the entry gates
+| Tool | Minimum version |
+|------|-----------------|
+| C++ compiler | C++17 support (`g++`, `clang++`, or MSVC) |
+| CMake | 3.16+ |
+| pthreads | (bundled on Linux/macOS) |
 
 ---
 
-#### 🎯 Why This Design Is Efficient
+## 🚀 Quick Start
 
-- Scales linearly with the number of spectators and gates
-- Uses multi-threading to enable real-time processing (via AutoDequeue)
-- Offers real-time suggestions for the least busy gates
-- Minimizes memory overhead while maintaining fast responsiveness
-- Provides VIP handling and queue switching with minimal cost
+### Build
 
-This design ensures smooth entry for all attendees and balances speed, scalability, and real-world simulation accuracy, making it ideal for applications like stadium crowd management systems.
+```bash
+cmake -S . -B build && cmake --build build
+```
+
+### Run tests
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+### Run the simulator
+
+```bash
+# Compare all three strategies over 200 seeded runs (default)
+./build/stadium compare
+
+# One detailed report for a specific strategy + seed
+./build/stadium sim --seed 7 --strategy random
+
+# Interactive console (1 simulated minute = 2 real seconds)
+./build/stadium interactive --tick-ms 2000
+
+# Custom scenario: 5,000 seats, 20 gates, VIP every 50th ticket, 30-cycle arrival window
+./build/stadium compare --capacity 5000 --gates 20 --vip-every 50 --window 30
+```
+
+### Without CMake
+
+```bash
+g++ -std=c++17 -O2 -Iinclude src/*.cpp -pthread -o stadium
+```
+
+### Sanitizer builds
+
+```bash
+cmake -S . -B build-tsan -DSANITIZE=thread    # also: address, undefined
+cmake --build build-tsan
+```
 
 ---
 
-### ⚙️ Algorithm Overview
+## 📊 Sample Output
 
-#### 1. Initialize Constants
-- M: Capacity of the stadium  
-- N: Number of entry gates  
-- p: Minutes it takes for one attendee to enter through any gate
+```
+Averages over 200 seeded runs (capacity=100, gates=10, arrival window=10)
 
-#### 2. Stopwatch Class
-- Private member: start time of type high_resolution_clock
-- Constructor: Initializes start with current time
-- ElapsedMinutes(): Returns the elapsed time in minutes
+strategy       total min  avg wait  p95 wait  max wait  peak queue
+least-loaded        11.0       3.0       5.4       6.0         6.0
+round-robin         11.0       3.0       5.4       6.0         6.0
+random              14.1       3.5       7.8       9.4         9.4
+```
 
-#### 3. HashFunction
-- Takes Serial_No as input
-- Returns 1 if Serial_No % (M/8) == 0, marking it as a VIP
+Balanced assignment (**least-loaded**) cuts the time to fill the stadium by **~22 %** and the worst-case wait by **~36 %** versus random choice. Round-robin ties least-loaded here because all gates have identical speed; least-loaded additionally adapts when queues become uneven (e.g. after gate switches).
 
-#### 4. CreateSerialNo
-- Takes array SerialStat of pairs (short, int)
-- Sets each SerialStat[i].first to 0
-- Ends loop after initialization
+---
 
-#### 5. AssignRandomGate
-- Inputs: SerialStat array and Queue array of deques
-- Randomly assigns M/2 spectators to gates
-- Ensures no VIPs and no duplicates
-- Updates SerialStat status and gate assignment
+## 🗂️ Project Structure
 
-#### 6. Distribute
-- Balances queue sizes across gates
-- Calculates limit = M / N
-- Moves excess spectators into reshuff vector
-- Redistributes from reshuff to underfilled queues
+```
+SmartGate/
+├── CMakeLists.txt                # Build configuration
+├── include/stadium/              # Public headers
+│   ├── config.hpp                #   Config struct (capacity, gates, entry time, VIP rule)
+│   ├── gate.hpp                  #   Gate: FIFO queue with O(1) arbitrary removal
+│   ├── stadium.hpp               #   Stadium: domain model + virtual clock (no I/O, no threads)
+│   ├── simulation.hpp            #   Strategies, auto-arrivals, statistics, reports
+│   └── interactive.hpp           #   Console front-end with background clock thread
+├── src/
+│   ├── main.cpp                  # CLI entry point (compare | sim | interactive)
+│   ├── stadium.cpp               # Stadium implementation
+│   ├── simulation.cpp            # Simulation engine & strategy comparison
+│   └── interactive.cpp           # Interactive mode (multi-threaded console)
+└── tests/
+    └── tests.cpp                 # 13 tests, dependency-free runner, registered with CTest
+```
 
-#### 7. CountPeopleLeft
-- Iterates over Queue array
-- Returns total number of people left in all queues
+**Layering:** `Gate` → `Stadium` *(pure logic)* → `simulation` / `interactive` *(I/O and policy)*
 
-#### 8. Suggestion
-- Finds the queue(s) with minimum size
-- Calculates and displays minimum waiting time
-- Suggests all gate numbers with minimal queues
+The core never prints or sleeps — that is what makes it testable and fast.
 
-#### 9. Delete
-- Removes a specific Serial_No from a given Gate queue
-- Uses an iterator to erase element from the deque
+---
 
-#### 10. AutoDequeue
-- Runs in a loop until all spectators are processed
-- Sleeps for p minutes between dequeuing cycles
-- Pops one spectator from the back of each non-empty deque
-- Marks them as entered (SerialStat[i].first = 2)
+## 🏗️ Architecture & Design Decisions
 
-#### 11. Main Function Logic
-- Declares SerialStat, Queue, sr_num, queue_num, and a Counter instance
-- Initializes serial numbers and gate assignments
-- Starts the stopwatch and the AutoDequeue thread
-- Begins infinite user interaction loop:
-  - Prompts for 7-digit serial number
-  - Validates and normalizes input
-  - If valid:
-    - If not yet in queue:
-      - Check VIP status
-      - If VIP: mark as entered
-      - Else: suggest gate, accept preference, assign to chosen queue
-    - If already in a queue: allow re-selection of gate
-    - If already entered: show denial message
-  - If invalid: prompt again
-- Continues until all non-VIP spectators have entered
-- Outputs total time taken using the stopwatch
-- Ends program with return value 0
+| Concern | Approach | Complexity |
+|---------|----------|------------|
+| Queue with arbitrary removal (gate switching) | `std::list` + `unordered_map<id, iterator>` | push / pop / remove: **O(1)** |
+| Find the least-loaded gate | `std::set<(length, gate)>` kept in sync on every change | query **O(k + log N)**, update **O(log N)** |
+| Serial ↔ index mapping | `serial = base + index`, plain arithmetic | **O(1)** |
+| Time | Virtual clock advanced by `tick()` | A 10-min run takes μs |
+| Randomness | `std::mt19937` + `uniform_int_distribution` (seedable) | Reproducible with `--seed` |
+| Pre-filled crowd | `std::shuffle` of candidates | Always terminates |
+
+---
+
+## 🔒 Concurrency Model (Interactive Mode)
+
+- **One `std::mutex`** guards the `Stadium`; both the ticker thread and the input thread acquire it.
+- The ticker sleeps on `condition_variable::wait_for` with a stop predicate, so **shutdown is immediate**. The thread is joined via an **RAII guard** (no `detach`).
+- **No check-then-act race:** the user may take 30 seconds to pick a gate. `join()` and `switchGate()` re-validate state under the lock and return an `Outcome` (e.g. `AlreadyInside`) instead of trusting stale data.
+- Input uses `getline` + `stoi` with full-string validation, so bad input cannot wedge `cin`.
+- A stress test (`concurrent_access_with_mutex`) and the interactive binary were both run under **ThreadSanitizer** with zero reports.
+
+---
+
+## ⚙️ CLI Reference
+
+```
+Usage: stadium <mode> [options]
+
+Modes:
+  compare       Compare gate-selection strategies over many seeded runs (default)
+  sim           One detailed simulation report
+  interactive   Live console with a background clock
+
+Options:
+  --capacity N        Stadium seats                     (default: 100)
+  --gates N           Number of entry gates             (default: 10)
+  --entry-minutes N   Minutes per admission             (default: 1)
+  --vip-every N       Every Nth serial is VIP           (default: 12, 0 = none)
+  --seed N            RNG seed                          (default: random for interactive, 42 otherwise)
+  --strategy S        least-loaded | random | round-robin  (sim mode only)
+  --window N          Arrival window in cycles          (default: 10)
+  --runs N            Runs to average in compare mode   (default: 200)
+  --tick-ms N         Real ms per simulated minute      (default: 2000, interactive only)
+```
